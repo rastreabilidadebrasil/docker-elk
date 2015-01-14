@@ -9,12 +9,12 @@ RUN apt-get install -y supervisor curl wget
 # Elasticsearch
 RUN \
     wget -qO - http://packages.elasticsearch.org/GPG-KEY-elasticsearch | apt-key add - && \
-    if ! grep "elasticsearch" /etc/apt/sources.list; then echo "deb http://packages.elasticsearch.org/elasticsearch/1.4/debian stable main" >> /etc/apt/sources.list;fi && \
+    if ! grep "elasticsearch" /etc/apt/sources.list; then echo "deb http://packages.elasticsearch.org/elasticsearch/1.1/debian stable main" >> /etc/apt/sources.list;fi && \
     if ! grep "logstash" /etc/apt/sources.list; then echo "deb http://packages.elasticsearch.org/logstash/1.4/debian stable main" >> /etc/apt/sources.list;fi && \
     apt-get update
 
 RUN \
-    apt-get install -y elasticsearch && \
+    apt-get install -y elasticsearch=1.1.1 && \
     apt-get clean && \
     sed -i '/#cluster.name:.*/a cluster.name: logstash' /etc/elasticsearch/elasticsearch.yml && \
     sed -i '/#path.data: \/path\/to\/data/a path.data: /data' /etc/elasticsearch/elasticsearch.yml
@@ -25,16 +25,26 @@ ADD etc/supervisor/conf.d/elasticsearch.conf /etc/supervisor/conf.d/elasticsearc
 RUN apt-get install -y logstash && \
     apt-get clean
 
+ADD etc/logstash/logstash.conf /etc/logstash/logstash.conf
 ADD etc/supervisor/conf.d/logstash.conf /etc/supervisor/conf.d/logstash.conf
 
 # Kibana
 RUN \
-    curl -s https://download.elasticsearch.org/kibana/kibana/kibana-4.0.0-beta3.tar.gz | tar -C /opt -xz && \
-    ln -s /opt/kibana-4.0.0-beta3 /opt/kibana && \
-    sed -i 's/port: 5601/port: 80/' /opt/kibana/config/kibana.yml
+    apt-get install -y nginx && \
+  if ! grep "daemon off" /etc/nginx/nginx.conf; then sed -i '/worker_processes.*/a daemon off;' /etc/nginx/nginx.conf;fi && \
+  mkdir -p /var/www && \
+  wget -O kibana.tar.gz https://download.elasticsearch.org/kibana/kibana/kibana-3.1.0.tar.gz && \
+    tar xzf kibana.tar.gz -C /opt && \
+    ln -s /opt/kibana-3.1.0 /var/www/kibana
 
-ADD etc/supervisor/conf.d/kibana.conf /etc/supervisor/conf.d/kibana.conf
+RUN sed -i 's/"http:\/\/"+window.location.hostname+":9200"/"http:\/\/"+window.location.hostname+":"+window.location.port/' /opt/kibana-3.1.0/config.js
+
+# configure nginx
+ADD etc/supervisor/conf.d/nginx.conf /etc/supervisor/conf.d/nginx.conf
+ADD etc/nginx/default /etc/nginx/sites-enabled/default
 
 EXPOSE 80
+EXPOSE 28777
+EXPOSE 9200
 
 CMD [ "/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf" ]
